@@ -11,7 +11,7 @@
  * harness would cover the full 12-method surface plus sendTransaction/poll.
  */
 import { xdr, rpc, Address, StrKey, TransactionBuilder, hash as sha256 } from '@stellar/stellar-sdk';
-import type { Ledger } from './index.js';
+import { HOST_PROTOCOL, type Ledger } from './index.js';
 import type { TxOutcome, TxResultCode } from './classic.js';
 
 /** A stand-in friendbot endpoint; the adapter answers it without a socket. */
@@ -131,7 +131,7 @@ function transactionMeta(outcome: TxOutcome): xdr.TransactionMeta {
 function ledgerHeaderXdr(seq: number, closeTime: number): string {
   const zero32 = Buffer.alloc(32);
   return new xdr.LedgerHeader({
-    ledgerVersion: 27,
+    ledgerVersion: HOST_PROTOCOL,
     previousLedgerHash: zero32,
     scpValue: new xdr.StellarValue({
       txSetHash: zero32,

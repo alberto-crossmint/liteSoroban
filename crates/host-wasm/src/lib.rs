@@ -16,6 +16,18 @@
 //! `encoded_ttl_entries` as two parallel, equal-length iterators. P28 changed it
 //! to 13 args with TTL folded into a single iterator via `TtlLedgerEntryMeta`.
 //! The recording-mode signature is identical across both.
+//!
+//! This crate targets the P28 shape. The single iterator has invariants the
+//! compiler cannot check, and breaking any of them fails the call with
+//! `Error(Storage, InternalError)` rather than a type error:
+//!   * exactly one item per footprint key, `read_only` keys first and then
+//!     `read_write`, because the host zips the iterator against the footprint;
+//!   * an absent key is `(None, None)`: skipping it shifts every later entry
+//!     onto the wrong key;
+//!   * ContractData/ContractCode entries carry `Some(TtlLedgerEntryMeta)`,
+//!     every other entry type carries `None`;
+//!   * no TTL in it is below the current ledger, so an archived entry the
+//!     transaction restores goes in with its post-restore TTL.
 
 use base64::Engine;
 use std::cell::RefCell;
@@ -25,17 +37,18 @@ use wasm_bindgen::prelude::*;
 
 use soroban_env_host::budget::Budget;
 use soroban_env_host::e2e_invoke::{
-    invoke_host_function, invoke_host_function_in_recording_mode, RecordingInvocationAuthMode,
+    entry_size_for_rent, invoke_host_function, invoke_host_function_in_recording_mode,
+    RecordingInvocationAuthMode, TtlLedgerEntryMeta,
 };
 use soroban_env_host::e2e_testutils::{
     account_entry, get_account_id, get_wasm_hash, get_wasm_key, wasm_entry, DEFAULT_NETWORK_ID,
 };
 use soroban_env_host::storage::{EntryWithLiveUntil, SnapshotSource};
 use soroban_env_host::xdr::{
-    AccountId, Hash, HostFunction, LedgerEntry, LedgerEntryData, LedgerKey, LedgerKeyAccount,
+    AccountId, HostFunction, LedgerEntry, LedgerEntryData, LedgerKey, LedgerKeyAccount,
     LedgerKeyContractCode, LedgerKeyContractData, LedgerKeyTrustLine, Limits, ReadXdr,
     ContractCostParams, ContractDataDurability, SorobanAuthorizationEntry, SorobanResources,
-    TtlEntry, WriteXdr,
+    WriteXdr,
 };
 use soroban_env_host::{HostError, LedgerInfo};
 
@@ -94,8 +107,6 @@ fn key_of(e: &LedgerEntry) -> Result<LedgerKey, JsError> {
     })
 }
 
-/// Only ContractData/ContractCode carry a TTL. The host rejects those two
-/// with an empty ttl buffer, and rejects the others with a non-empty one.
 /// stellar-rpc never returns the raw recorded instruction count: recording mode
 /// measures slightly less work than the enforcing pass actually does, so it
 /// pads with `max(raw + 50_000, raw * 1.04)` before handing resources back.
@@ -113,6 +124,8 @@ fn is_temporary(k: &LedgerKey) -> bool {
     matches!(k, LedgerKey::ContractData(d) if d.durability == ContractDataDurability::Temporary)
 }
 
+/// Only ContractData/ContractCode carry a TTL. The host rejects those two
+/// without `TtlLedgerEntryMeta`, and rejects the others with it.
 fn needs_ttl(k: &LedgerKey) -> bool {
     matches!(k, LedgerKey::ContractData(_) | LedgerKey::ContractCode(_))
 }
@@ -122,11 +135,6 @@ fn encode_diagnostics(events: &[soroban_env_host::xdr::DiagnosticEvent]) -> Vec<
         .iter()
         .filter_map(|e| e.to_xdr(Limits::none()).ok().map(|b| b64e(&b)))
         .collect()
-}
-
-fn key_hash(k: &LedgerKey) -> Result<Hash, JsError> {
-    let bytes = k.to_xdr(Limits::none()).map_err(xdr_err)?;
-    Ok(Hash(Sha256::digest(&bytes).into()))
 }
 
 // ---------------------------------------------------------------------------
@@ -636,12 +644,20 @@ impl SorobanEnv {
     ) -> Result<JsValue, JsError> {
         let resources: SorobanResources = from_xdr_b64(resources_b64)?;
 
-        // The host wants every *existing* entry named by the footprint, plus a
-        // parallel, equal-length iterator of TtlEntry XDR (empty for entries
-        // that have no TTL). Absent footprint keys are filled in as None by the
-        // host itself, so we simply skip them.
-        let mut entries: Vec<Vec<u8>> = Vec::new();
-        let mut ttls: Vec<Vec<u8>> = Vec::new();
+        // stellar-core caps the enforcing run at the declared instruction
+        // count and reports INVOKE_HOST_FUNCTION_RESOURCE_LIMIT_EXCEEDED when
+        // it is exceeded. Without this the declared resources are decorative.
+        let budget = self.make_budget(if self.enforce_declared_resources {
+            Some(resources.instructions as u64)
+        } else {
+            None
+        })?;
+
+        // One item per footprint key, in the order the host zips them against
+        // the footprint; see PROTOCOL PINNING at the top of this file.
+        let mut entries: Vec<(Option<Vec<u8>>, Option<TtlLedgerEntryMeta>)> = Vec::with_capacity(
+            resources.footprint.read_only.len() + resources.footprint.read_write.len(),
+        );
         {
             let store = self.store.borrow();
             // Entries the simulation marked for auto-restore, by read_write index.
@@ -662,6 +678,7 @@ impl SorobanEnv {
             for key in all_keys {
                 let rc_key = Rc::new(key.clone());
                 let Some((entry, live_until)) = store.get(&rc_key) else {
+                    entries.push((None, None));
                     continue;
                 };
 
@@ -669,27 +686,36 @@ impl SorobanEnv {
                 // protocol is concerned: core never hands it to the host, and
                 // the enforcing path rejects any TTL below the current ledger.
                 if is_temporary(key) && live_until.map_or(false, |t| t < self.ledger_seq) {
+                    entries.push((None, None));
                     continue;
                 }
 
-                entries.push(entry.to_xdr(Limits::none()).map_err(xdr_err)?);
-                if needs_ttl(key) {
+                let encoded = entry.to_xdr(Limits::none()).map_err(xdr_err)?;
+                let ttl_meta = if needs_ttl(key) {
                     // Restoring is the EMBEDDER's job: core rewrites the TTL of
                     // an archived entry to ledgerSeq + minPersistentTTL - 1
                     // before handing it to the host, "as if they were alive".
-                    let live = if restored.contains(key) {
+                    let live_until_ledger = if restored.contains(key) {
                         restored_live_until
                     } else {
                         live_until.unwrap_or(self.ledger_seq)
                     };
-                    let ttl = TtlEntry {
-                        key_hash: key_hash(key)?,
-                        live_until_ledger_seq: live,
-                    };
-                    ttls.push(ttl.to_xdr(Limits::none()).map_err(xdr_err)?);
+                    // The host's own helper, so contract code is sized with the
+                    // same module memory cost core charges rent on.
+                    let entry_size_for_rent = entry_size_for_rent(
+                        &budget,
+                        entry,
+                        u32::try_from(encoded.len()).unwrap_or(u32::MAX),
+                    )
+                    .map_err(host_err)?;
+                    Some(TtlLedgerEntryMeta {
+                        live_until_ledger,
+                        entry_size_for_rent,
+                    })
                 } else {
-                    ttls.push(Vec::new());
-                }
+                    None
+                };
+                entries.push((Some(encoded), ttl_meta));
             }
         }
 
@@ -698,14 +724,6 @@ impl SorobanEnv {
             .map(|s| b64d(s))
             .collect::<Result<Vec<_>, _>>()?;
 
-        // stellar-core caps the enforcing run at the declared instruction
-        // count and reports INVOKE_HOST_FUNCTION_RESOURCE_LIMIT_EXCEEDED when
-        // it is exceeded. Without this the declared resources are decorative.
-        let budget = self.make_budget(if self.enforce_declared_resources {
-            Some(resources.instructions as u64)
-        } else {
-            None
-        })?;
         let mut diagnostics = Vec::new();
 
         let res = invoke_host_function(
@@ -718,7 +736,6 @@ impl SorobanEnv {
             auth_entries.into_iter(),
             self.ledger_info(),
             entries.into_iter(),
-            ttls.into_iter(),
             vec![0u8; 32],
             &mut diagnostics,
             None,

@@ -1,19 +1,18 @@
 /**
- * Conformance against upstream `soroban-env-host` 27.0.1 e2e tests.
+ * Conformance against upstream `soroban-env-host` 29.0.2 e2e tests.
  *
  * GROUND TRUTH
- *   <scratch>/
- *     scratchpad/v27/soroban-env-host-27.0.1/src/test/e2e_tests.rs
+ *   soroban-env-host-29.0.2/src/test/e2e_tests.rs
  *   (helpers: ../../src/e2e_testutils.rs, ../../src/e2e_invoke.rs)
  *
  * Every expected number here is copied from that file, NOT read back from this
- * harness. The pinned host is 27.0.1; note that 28.0.1 has completely different
- * expectations for the same tests (e.g. 1528075 instead of 1767593 for the
- * ADD_I32 upload preflight), so numbers must come from the 27.0.1 file.
+ * harness. The pinned host is 29.0.2; note that 27.0.1 has completely different
+ * expectations for the same tests (e.g. 1767593 instead of 1528075 for the
+ * ADD_I32 upload preflight), so numbers must come from the 29.0.2 file.
  *
  * SETUP FIDELITY
  *   `default_ledger_info()` (e2e_testutils.rs:106) is
- *     protocol 27, sequence_number 1_000_000, timestamp 12_345_678,
+ *     protocol 29, sequence_number 1_000_000, timestamp 12_345_678,
  *     network_id [5;32], base_reserve 5_000_000, min_temp_entry_ttl 16,
  *     min_persistent_entry_ttl 100_000, max_entry_ttl 10_000_000.
  *   crates/host-wasm/src/lib.rs hardcodes base_reserve and the three TTL
@@ -88,7 +87,7 @@ const b64 = (k: { toXDR(f: 'base64'): string }) => k.toXDR('base64');
 /** `bytes_sc_val(&get_wasm_hash(wasm))` */
 const wasmHashScVal = (code: Uint8Array) => xdr.ScVal.scvBytes(wasmHash(code));
 
-/** `resources(instructions, ro_footprint, rw_footprint)` (e2e_tests.rs:67) */
+/** `resources(instructions, ro_footprint, rw_footprint)` (e2e_tests.rs:65) */
 function resources(
   instructions: number,
   readOnly: xdr.LedgerKey[],
@@ -130,7 +129,7 @@ function ledgerEntry(data: xdr.LedgerEntryData): xdr.LedgerEntry {
   });
 }
 
-/** `contract_data_key(contract, key, durability)` (e2e_tests.rs:705) */
+/** `contract_data_key(contract, key, durability)` (e2e_tests.rs:694) */
 function contractDataKey(
   contract: xdr.ScAddress,
   key: xdr.ScVal,
@@ -141,7 +140,7 @@ function contractDataKey(
   );
 }
 
-/** `contract_data_entry(contract, key, val, durability)` (e2e_tests.rs:717) */
+/** `contract_data_entry(contract, key, val, durability)` (e2e_tests.rs:706) */
 function contractDataEntry(
   contract: xdr.ScAddress,
   key: xdr.ScVal,
@@ -310,7 +309,7 @@ const scValEq = (b: string | undefined, v: xdr.ScVal) => expect(b).toBe(v.toXDR(
 
 // ===========================================================================
 describe('upstream e2e_tests.rs :: wasm upload', () => {
-  // e2e_tests.rs:786 test_wasm_upload_success
+  // e2e_tests.rs:775 test_wasm_upload_success
   it('test_wasm_upload_success', () => {
     const L = e2eLedger();
     const ledgerKey = getWasmKey(ADD_I32);
@@ -339,7 +338,7 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(res.cpuInsns > 0n).toBe(true);
   });
 
-  // e2e_tests.rs:855 test_wasm_upload_success_in_recording_mode
+  // e2e_tests.rs:844 test_wasm_upload_success_in_recording_mode
   it('test_wasm_upload_success_in_recording_mode', () => {
     const L = e2eLedger();
     const ledgerKey = getWasmKey(ADD_I32);
@@ -351,14 +350,14 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     scValEq(sim.returnValueXdr, wasmHashScVal(ADD_I32));
     expect(sim.authXdr).toEqual([]);
 
-    expect(sim.instructions).toBe(1767593); // expect!["1767593"]
+    expect(sim.instructions).toBe(1528075); // expect!["1528075"]
     expect(sim.writeBytes).toBe(684); //       expect!["684"]
     expect(sim.readBytes).toBe(0); //          disk_read_bytes: 0
     expect(sim.readOnlyKeys).toEqual([]);
     expect(sim.readWriteKeys).toEqual([b64(ledgerKey)]);
   });
 
-  // e2e_tests.rs:829 test_wasm_upload_failure_due_to_unsupported_wasm_features
+  // e2e_tests.rs:818 test_wasm_upload_failure_due_to_unsupported_wasm_features
   it('test_wasm_upload_failure_due_to_unsupported_wasm_features', () => {
     const L = e2eLedger();
     const res = send(
@@ -371,21 +370,21 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(res.cpuInsns >= 0n).toBe(true);
   });
 
-  // e2e_tests.rs:911 test_wasm_upload_failure_in_recording_mode
+  // e2e_tests.rs:900 test_wasm_upload_failure_in_recording_mode
   it('test_wasm_upload_failure_in_recording_mode', () => {
     const L = e2eLedger();
     const sim = L.simulate(uploadWasmHostFn(new Uint8Array(1000)), SOURCE);
 
     expectHostError(sim, 'WasmVm', 'InvalidAction');
     expect(sim.eventsXdr).toEqual([]);
-    expect(sim.instructions).toBe(1093647); // expect!["1093647"]
+    expect(sim.instructions).toBe(888468); // expect!["888468"]
     expect(sim.readOnlyKeys).toEqual([]);
     expect(sim.readWriteKeys).toEqual([]);
     expect(sim.readBytes).toBe(0);
     expect(sim.writeBytes).toBe(0);
   });
 
-  // e2e_tests.rs:949 test_unsupported_wasm_upload_failure_in_recording_mode
+  // e2e_tests.rs:938 test_unsupported_wasm_upload_failure_in_recording_mode
   it('test_unsupported_wasm_upload_failure_in_recording_mode', () => {
     const L = e2eLedger();
     const sim = L.simulate(uploadWasmHostFn(ADD_F32), SOURCE);
@@ -393,10 +392,10 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(sim.eventsXdr).toEqual([]);
   });
 
-  // e2e_tests.rs:1004 test_wasm_upload_budget_exceeded
+  // e2e_tests.rs:993 test_wasm_upload_budget_exceeded
   //
   // Upstream limits the enforcing budget to `resources.instructions`
-  // (e2e_tests.rs:385 `budget.reset_cpu_limit(resources.instructions)`); 1M is
+  // (e2e_tests.rs:375 `budget.reset_cpu_limit(resources.instructions)`); 1M is
   // not enough to upload CONTRACT_STORAGE, so the call fails with
   // (Budget, ExceededLimit) and ends with zero instructions remaining.
   //
@@ -420,7 +419,7 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(res.eventsXdr).toEqual([]);
   });
 
-  // e2e_tests.rs:1029 test_wasm_upload_with_incorrect_footprint_fails
+  // e2e_tests.rs:1018 test_wasm_upload_with_incorrect_footprint_fails
   it('test_wasm_upload_with_incorrect_footprint_fails', () => {
     const L = e2eLedger();
     // RO footprint instead of RW
@@ -437,7 +436,7 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(L.getEntry(b64(getWasmKey(ADD_I32)))).toBeUndefined();
   });
 
-  // e2e_tests.rs:1056 test_wasm_upload_without_footprint_fails
+  // e2e_tests.rs:1105 test_wasm_upload_without_footprint_fails
   it('test_wasm_upload_without_footprint_fails', () => {
     const L = e2eLedger();
     const res = send(L, uploadWasmHostFn(ADD_I32), SOURCE, resources(10_000_000, [], []));
@@ -450,7 +449,7 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(res.error).toMatch(/outside of the footprint/);
   });
 
-  // e2e_tests.rs:1080 test_wasm_reupload_is_no_op
+  // e2e_tests.rs:1129 test_wasm_reupload_is_no_op
   it('test_wasm_reupload_is_no_op', () => {
     const L = e2eLedger();
     // (wasm_entry(ADD_I32), Some(ledger_info.sequence_number))
@@ -474,7 +473,7 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
     expect(res.cpuInsns > 0n).toBe(true);
   });
 
-  // e2e_tests.rs:1126 test_wasm_upload_success_with_extra_footprint_entries
+  // e2e_tests.rs:1175 test_wasm_upload_success_with_extra_footprint_entries
   it('test_wasm_upload_success_with_extra_footprint_entries', () => {
     const L = e2eLedger();
     // Only LINEAR_MEMORY exists, at seq + 1000. CONTRACT_STORAGE is named in the
@@ -518,7 +517,7 @@ describe('upstream e2e_tests.rs :: wasm upload', () => {
 
 // ===========================================================================
 describe('upstream e2e_tests.rs :: create contract', () => {
-  // e2e_tests.rs:1210 test_create_contract_success
+  // e2e_tests.rs:1259 test_create_contract_success
   it('test_create_contract_success', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -549,7 +548,7 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     expect(res.cpuInsns > 0n).toBe(true);
   });
 
-  // e2e_tests.rs:1403 test_create_contract_success_in_recording_mode
+  // e2e_tests.rs:1452 test_create_contract_success_in_recording_mode
   it('test_create_contract_success_in_recording_mode', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -563,18 +562,18 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     // assert_eq!(res.auth, vec![cd.auth_entry]);
     expect(sim.authXdr).toEqual([cd.authEntry.toXDR('base64')]);
 
-    expect(sim.instructions).toBe(663637); // expect!["663637"]
+    expect(sim.instructions).toBe(285014); // expect!["285014"]
     expect(sim.writeBytes).toBe(104); //     expect!["104"]
     expect(sim.readBytes).toBe(0);
     expect(sim.readOnlyKeys).toEqual([b64(cd.wasmKey)]);
     expect(sim.readWriteKeys).toEqual([b64(cd.contractKey)]);
   });
 
-  // e2e_tests.rs:1612 test_create_contract_success_in_recording_mode_with_enforced_auth
+  // e2e_tests.rs:1660 test_create_contract_success_in_recording_mode_with_enforced_auth
   //
   // `RecordingInvocationAuthMode::Enforcing(vec![auth_entry])` — the mode
   // `simulateWithAuth` exposes. Costs 1501 instructions more than recording auth
-  // (665138 vs 663637) because the supplied entry is verified rather than
+  // (286516 vs 285014) because the supplied entry is verified rather than
   // recorded.
   it('test_create_contract_success_in_recording_mode_with_enforced_auth', () => {
     const L = e2eLedger();
@@ -589,14 +588,14 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     // The entries passed in are passed straight back out.
     expect(sim.authXdr).toEqual([cd.authEntry.toXDR('base64')]);
 
-    expect(sim.instructions).toBe(665138); // expect!["665138"]
+    expect(sim.instructions).toBe(286516); // expect!["286516"]
     expect(sim.writeBytes).toBe(104); //     expect!["104"]
     expect(sim.readBytes).toBe(0);
     expect(sim.readOnlyKeys).toEqual([b64(cd.wasmKey)]);
     expect(sim.readWriteKeys).toEqual([b64(cd.contractKey)]);
   });
 
-  // e2e_tests.rs:1698 test_create_contract_success_with_extra_footprint_entries
+  // e2e_tests.rs:1746 test_create_contract_success_with_extra_footprint_entries
   it('test_create_contract_success_with_extra_footprint_entries', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -628,7 +627,7 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     expect(L.getEntryTtl(b64(cd2.wasmKey))).toBe(DEFAULT_LEDGER_SEQ + 200);
   });
 
-  // e2e_tests.rs:1776 test_create_contract_without_footprint_fails
+  // e2e_tests.rs:1824 test_create_contract_without_footprint_fails
   it('test_create_contract_without_footprint_fails', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -640,7 +639,7 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     expect(res.error).toMatch(/Diagnostic Event/);
   });
 
-  // e2e_tests.rs:1802 test_create_contract_without_auth_fails
+  // e2e_tests.rs:1850 test_create_contract_without_auth_fails
   it('test_create_contract_without_auth_fails', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -657,7 +656,7 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     expect(res.error).toMatch(/Diagnostic Event/);
   });
 
-  // e2e_tests.rs:1828 test_create_contract_without_wasm_entry_fails
+  // e2e_tests.rs:1876 test_create_contract_without_wasm_entry_fails
   it('test_create_contract_without_wasm_entry_fails', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -674,7 +673,7 @@ describe('upstream e2e_tests.rs :: create contract', () => {
     expect(res.eventsXdr).toEqual([]);
   });
 
-  // e2e_tests.rs:1853 test_create_contract_with_incorrect_auth_fails
+  // e2e_tests.rs:1901 test_create_contract_with_incorrect_auth_fails
   it('test_create_contract_with_incorrect_auth_fails', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -730,7 +729,7 @@ describe('upstream e2e_tests.rs :: invoke contract', () => {
     return { cd, wasmEntry, dataKey };
   }
 
-  // e2e_tests.rs:1883 test_invoke_contract_with_storage_ops_success
+  // e2e_tests.rs:1931 test_invoke_contract_with_storage_ops_success
   it('test_invoke_contract_with_storage_ops_success', () => {
     const L = e2eLedger();
     const { cd, wasmEntry, dataKey } = storageSetup(L);
@@ -791,7 +790,7 @@ describe('upstream e2e_tests.rs :: invoke contract', () => {
     expect(L2.getEntry(b64(s2.dataKey))).toBe(newEntry.toXDR('base64'));
   });
 
-  // e2e_tests.rs:2024 test_invoke_contract_with_storage_ops_success_in_recording_mode
+  // e2e_tests.rs:2072 test_invoke_contract_with_storage_ops_success_in_recording_mode
   it('test_invoke_contract_with_storage_ops_success_in_recording_mode', () => {
     const L = e2eLedger();
     const { cd, dataKey } = storageSetup(L);
@@ -804,7 +803,7 @@ describe('upstream e2e_tests.rs :: invoke contract', () => {
     expect(sim.eventsXdr).toEqual([]);
     expect(sim.restoredRwEntryIndices).toEqual([]);
 
-    expect(sim.instructions).toBe(898006); // expect!["898006"]
+    expect(sim.instructions).toBe(389804); // expect!["389804"]
     expect(sim.writeBytes).toBe(80); //      expect!["80"]
     expect(sim.readBytes).toBe(0);
     expect(sim.readOnlyKeys).toEqual([b64(cd.contractKey), b64(cd.wasmKey)]);
@@ -831,7 +830,7 @@ describe('upstream e2e_tests.rs :: invoke contract', () => {
 
     expect(extendSim.ok, extendSim.error).toBe(true);
     scValEq(extendSim.returnValueXdr, xdr.ScVal.scvVoid());
-    expect(extendSim.instructions).toBe(1009860); // expect!["1009860"]
+    expect(extendSim.instructions).toBe(381571); // expect!["381571"]
     expect(extendSim.writeBytes).toBe(0);
     expect(extendSim.readBytes).toBe(0);
     expect(extendSim.readOnlyKeys).toEqual([
@@ -842,7 +841,7 @@ describe('upstream e2e_tests.rs :: invoke contract', () => {
     expect(extendSim.readWriteKeys).toEqual([]);
   });
 
-  // e2e_tests.rs:3089 test_invoke_contract_without_footprint_fails
+  // e2e_tests.rs:3143 test_invoke_contract_without_footprint_fails
   it('test_invoke_contract_without_footprint_fails', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, CONTRACT_STORAGE);
@@ -858,10 +857,10 @@ describe('upstream e2e_tests.rs :: invoke contract', () => {
 
 // ===========================================================================
 describe('upstream e2e_tests.rs :: budget', () => {
-  // e2e_tests.rs:750 test_run_out_of_budget_before_calling_host
+  // e2e_tests.rs:739 test_run_out_of_budget_before_calling_host
   //
   // `resources.instructions` is the CPU limit for the whole enforcing call
-  // (e2e_tests.rs:385). With 1000 instructions the host cannot even decode its
+  // (e2e_tests.rs:375). With 1000 instructions the host cannot even decode its
   // inputs, so `invoke_host_function` itself returns Err(Budget, ExceededLimit)
   // — before any footprint or auth check runs.
   //
@@ -883,7 +882,7 @@ describe('upstream e2e_tests.rs :: budget', () => {
 
 
   // The invariant behind `invoke_host_function_using_simulation`
-  // (e2e_tests.rs:609-672): the enforcing run is given
+  // (e2e_tests.rs:598-661): the enforcing run is given
   // `recorded_instructions * 1.02` as its CPU limit and must succeed within it.
   // A simulation that under-reports by more than 2% produces a transaction that
   // cannot apply.
@@ -891,8 +890,8 @@ describe('upstream e2e_tests.rs :: budget', () => {
   // The three tests below that involve a contract module FAIL — HARNESS GAP.
   // `SorobanEnv::send` passes `module_cache: None` to `invoke_host_function`
   // (crates/host-wasm/src/lib.rs:515), while upstream passes a `ModuleCache`
-  // built outside the metered budget (e2e_tests.rs:443
-  // `build_module_cache_for_entries`, called at :381), and stellar-core keeps
+  // built outside the metered budget (e2e_tests.rs:432
+  // `build_module_cache_for_entries`, called at :371), and stellar-core keeps
   // one per ledger. Without it, `instantiate_vm` (host/frame.rs:763) takes the
   // "throwaway module with its own engine" path and charges the parse to the
   // real budget. Recording mode meanwhile deliberately charges that same parse
@@ -920,7 +919,7 @@ describe('upstream e2e_tests.rs :: budget', () => {
     return { sim, sent };
   }
 
-  // e2e_tests.rs:972 test_wasm_upload_success_using_simulation
+  // e2e_tests.rs:961 test_wasm_upload_success_using_simulation
   it('test_wasm_upload_success_using_simulation', () => {
     const L = e2eLedger();
     const { sim, sent } = roundTrip(L, uploadWasmHostFn(ADD_I32), SOURCE);
@@ -931,7 +930,7 @@ describe('upstream e2e_tests.rs :: budget', () => {
     ).toBeLessThanOrEqual(limit);
   });
 
-  // e2e_tests.rs:1676 test_create_contract_success_using_simulation
+  // e2e_tests.rs:1724 test_create_contract_success_using_simulation
   it('test_create_contract_success_using_simulation', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, ADD_I32);
@@ -944,7 +943,7 @@ describe('upstream e2e_tests.rs :: budget', () => {
     ).toBeLessThanOrEqual(limit);
   });
 
-  // e2e_tests.rs:3024 test_invoke_contract_with_storage_ops_success_using_simulation
+  // e2e_tests.rs:3078 test_invoke_contract_with_storage_ops_success_using_simulation
   it('test_invoke_contract_with_storage_ops_success_using_simulation', () => {
     const L = e2eLedger();
     const cd = createContractData(L, 111, CONTRACT_STORAGE);
@@ -963,7 +962,7 @@ describe('upstream e2e_tests.rs :: budget', () => {
     ).toBeLessThanOrEqual(limit);
   });
 
-  // e2e_tests.rs:3215 test_cap_54_55_56_module_cache_recording_fidelity
+  // e2e_tests.rs:3269 test_cap_54_55_56_module_cache_recording_fidelity
   //
   // SUM_I32 calls into ADD_I32, so a whole invocation runs TWO contract
   // modules. Recording mode charges both parses to the shadow budget
@@ -1000,11 +999,11 @@ describe('upstream e2e_tests.rs :: budget', () => {
 // Upstream assertions that cannot be expressed against this harness at all.
 // Each one is a missing capability, not a disagreement about a value.
 describe('upstream e2e_tests.rs :: assertions the harness cannot express', () => {
-  // e2e_tests.rs:768 test_run_out_of_budget_before_calling_host_in_recording_mode
+  // e2e_tests.rs:757 test_run_out_of_budget_before_calling_host_in_recording_mode
   //
   // MISSING: a recording-mode CPU limit. Upstream's helper takes
   // `max_instructions_override` and calls `budget.reset_cpu_limit(1000)` before
-  // `invoke_host_function_in_recording_mode` (e2e_tests.rs:474-477).
+  // `invoke_host_function_in_recording_mode` (e2e_tests.rs:463-466).
   // `SorobanEnv::simulate` builds its own `Budget::default()`
   // (crates/host-wasm/src/lib.rs:386) and takes no limit argument, so
   // "preflight this transaction under a 1000-instruction cap" is inexpressible.
@@ -1015,7 +1014,7 @@ describe('upstream e2e_tests.rs :: assertions the harness cannot express', () =>
 
   // MISSING: memory metering on the enforcing path. Nearly every upstream
   // enforcing test ends with `assert!(res.budget.get_mem_bytes_consumed() > 0)`
-  // (e.g. e2e_tests.rs:825, 1052, 1122, 1261). `SimulateResult` carries
+  // (e.g. e2e_tests.rs:814, 1041, 1171, 1310). `SimulateResult` carries
   // `memBytes` but `SendResult` (lib.rs:149-157) carries only `cpuInsns`, so
   // the enforcing path's memory consumption — the other half of the metered
   // budget, and a real transaction failure mode — is not observable.
@@ -1024,7 +1023,7 @@ describe('upstream e2e_tests.rs :: assertions the harness cannot express', () =>
   });
 
   // MISSING: diagnostic events, and control over `enable_diagnostics`.
-  // e2e_tests.rs:1029 test_wasm_upload_with_incorrect_footprint_fails passes
+  // e2e_tests.rs:1018 test_wasm_upload_with_incorrect_footprint_fails passes
   // `enable_diagnostics = false` and asserts `res.diagnostic_events.is_empty()`;
   // ten other tests assert `res.diagnostic_events.len() >= 1`. Both `simulate`
   // and `send` hardcode `true` (lib.rs:393, 503) and drop the collected vector
@@ -1044,7 +1043,7 @@ describe('upstream e2e_tests.rs :: assertions the harness cannot express', () =>
   // (lib.rs:524-557), so the tests above have to reconstruct what they can from
   // `getEntry`/`getEntryTtl` afterwards. Two things stay invisible:
   //   * `old_entry_size_bytes_for_rent` — the input stellar-core uses to charge
-  //     rent, and the whole point of e2e_tests.rs:1105 in test_wasm_reupload_is_no_op.
+  //     rent, and the whole point of e2e_tests.rs:1154 in test_wasm_reupload_is_no_op.
   //   * the distinction between a read-only entry with a TTL bump and an entry
   //     that was not touched at all.
   it.skip('enforcing path returns full LedgerEntryChanges', () => {
@@ -1053,7 +1052,7 @@ describe('upstream e2e_tests.rs :: assertions the harness cannot express', () =>
 
   // MISSING: `contract_events_and_return_value_size` from recording mode.
   // The host returns it (e2e_invoke.rs:InvokeHostFunctionRecordingModeResult)
-  // and upstream pins it at e2e_tests.rs:661-667; it is the input to the
+  // and upstream pins it at e2e_tests.rs:650-656; it is the input to the
   // events-and-return-value component of the refundable resource fee.
   // `SimulateResult` (lib.rs:129-145) does not carry it, which is part of why
   // fake-rpc.ts has to invent the resource fee.

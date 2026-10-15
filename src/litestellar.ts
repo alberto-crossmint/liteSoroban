@@ -305,11 +305,10 @@ export class LiteStellar {
     return this.withSigverify(false).withSequenceCheck(false).withTimebounds(false);
   }
   /**
-   * Meter with a real network's cost calibration instead of the host's
-   * protocol-20 defaults. Defaults to the shipped protocol-27 table; pass one
-   * from `loadCostParamsFromRpc(server)` to match a specific network exactly.
-   *
-   * Until you call this, DO NOT assert on instructions, resources or fees.
+   * Meter with an explicit network cost calibration instead of the host's
+   * built-in one. Defaults to the shipped protocol-27 table, which the pinned
+   * host (29.0.2) already uses as its defaults; pass one from
+   * `loadCostParamsFromRpc(server)` to match a specific network exactly.
    */
   withNetworkCostParams(params: CostParams = PROTOCOL_27_COST_PARAMS): this {
     this.ledger.setCostParams(

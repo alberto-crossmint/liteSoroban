@@ -3,6 +3,11 @@
  * the live protocol-27 quickstart node (stellar-rpc 27.1.1 / captive-core
  * 27.1.0) at http://localhost:8000/rpc.
  *
+ * STALE SINCE THE PROTOCOL-29 BUMP: these numbers were measured with
+ * soroban-env-host 27.0.1 against that protocol-27 node. The pinned host is now
+ * 29.0.2, whose metering moved in 28.0.0, so the exact-match tests below go red
+ * until the node numbers are re-captured against a protocol-29 node.
+ *
  * Everything labelled "node" below was MEASURED by this author, not inherited:
  *
  *  (a) PREFLIGHT — `simulateTransaction` with `resourceConfig.instructionLeeway`

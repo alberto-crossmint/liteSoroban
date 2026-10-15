@@ -7,12 +7,12 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-# Pinned to the protocol the public network is running (P27).
+# Pinned to a single protocol (P29); `hostProtocolVersion()` reports it.
 # stellar-rpc vendors both -prev and -curr; a v1 harness should do the same.
-# The P28 enforcing path has a DIFFERENT signature (13 args, TTL folded into
-# the ledger-entry iterator) -- see notes in lib.rs.
+# The P28 enforcing path has a DIFFERENT signature from P27's (13 args, TTL
+# folded into the ledger-entry iterator) -- see PROTOCOL PINNING in lib.rs.
 [dependencies]
-soroban-env-host = { version = "=27.0.1", features = ["recording_mode", "testutils"] }
+soroban-env-host = { version = "=29.0.2", features = ["recording_mode", "testutils"] }
 wasm-bindgen = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde-wasm-bindgen = "0.6"
