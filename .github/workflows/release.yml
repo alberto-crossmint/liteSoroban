@@ -1,0 +1,98 @@
+name: release
+
+# Publish: git tag v0.1.0 && git push origin v0.1.0
+#
+# Run it by hand from the Actions tab (workflow_dispatch) to do everything
+# except create the release; the assets come out as a build artifact. A pull
+# request that touches this file or the packaging script does the same, so a
+# change to the release path is exercised before it can break a tag. Only a
+# v* tag reaches the release job.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/package-release.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Pinned: the WASM embeds rustc's version, so an unpinned `stable` would make
+  # two releases of the same source differ.
+  RUST_TOOLCHAIN: 1.97.1
+  WASM_PACK_VERSION: 0.15.0
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --target wasm32-unknown-unknown
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version "$WASM_PACK_VERSION" --locked
+
+      - run: npm ci
+
+      # rustc writes absolute source paths into the WASM (panic locations).
+      # Remap the runner's directories so the published file does not carry
+      # them; scripts/package-release.sh fails the build if any survive.
+      - name: Build host WASM
+        run: |
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/build --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=${RUSTUP_HOME:-$HOME/.rustup}=/rustup"
+          npm run build:wasm
+
+      # The gate: nothing is published from a build that fails the suite.
+      # `npm test` is the top-level suite only; test/validation/ holds
+      # deliberately red tests (see vitest.validation.config.ts).
+      - name: Test
+        run: npm test
+
+      - name: Package
+        run: ./scripts/package-release.sh "$GITHUB_REF_NAME" dist
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Verify checksums
+        run: cd dist && sha256sum --check SHA256SUMS
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          flags=(--verify-tag --generate-notes --title "$TAG")
+          # v0.2.0-rc.1 and friends are pre-releases.
+          case "$TAG" in *-*) flags+=(--prerelease) ;; esac
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" "${flags[@]}"

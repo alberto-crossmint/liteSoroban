@@ -8,9 +8,12 @@
  *
  * Every test here is RED against a *documented sentence*, not against src/.
  *
- * GROUND TRUTH
- *   <scratch>/v27/soroban-env-host-27.0.1/src/budget.rs
- *   <scratch>/core-src/src/ledger/NetworkConfig.cpp
+ * GROUND TRUTH (the first two are outside this repo; the tests that need them
+ * skip when unset)
+ *   $SOROBAN_ENV_HOST_SRC/src/budget.rs
+ *       a soroban-env-host 27.0.1 checkout
+ *   $STELLAR_CORE_SRC/src/ledger/NetworkConfig.cpp
+ *       a stellar-core checkout
  *   node_modules/@stellar/stellar-sdk (the pinned 16.2.0)
  */
 import { describe, it, expect } from 'vitest';
@@ -23,10 +26,11 @@ import { LiteStellar, sc, HostFailure } from '../../src/litestellar.js';
 const README = readFileSync('README.md', 'utf8');
 const GUIDE = readFileSync('GUIDE.md', 'utf8');
 
-const SCRATCH =
-  '/private/tmp/claude-501/-Users-alberto/8536199a-7797-4de6-9c1f-72ab2e240bed/scratchpad';
-const HOST_BUDGET_RS = `${SCRATCH}/v27/soroban-env-host-27.0.1/src/budget.rs`;
-const CORE_NETWORK_CONFIG = `${SCRATCH}/core-src/src/ledger/NetworkConfig.cpp`;
+// '' when unset: existsSync('') is false, so the skipIf guards below hold.
+const HOST_SRC = process.env.SOROBAN_ENV_HOST_SRC;
+const CORE_SRC = process.env.STELLAR_CORE_SRC;
+const HOST_BUDGET_RS = HOST_SRC ? `${HOST_SRC}/src/budget.rs` : '';
+const CORE_NETWORK_CONFIG = CORE_SRC ? `${CORE_SRC}/src/ledger/NetworkConfig.cpp` : '';
 
 const wasm = (n: string) => new Uint8Array(readFileSync(`test/fixtures/${n}`));
 

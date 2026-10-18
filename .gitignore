@@ -6,9 +6,9 @@ pkg/
 target/
 crates/*/target/
 
-# scratch files left by exploratory runs
-.probe*.mjs
-.probe*.ts
+# scratch files left by exploratory runs (.probe-*.mts slipped past the old
+# .mjs/.ts patterns and got committed)
+.probe*
 probe*.test.ts
 *.log
 
