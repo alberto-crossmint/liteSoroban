@@ -109,13 +109,25 @@ fn key_of(e: &LedgerEntry) -> Result<LedgerKey, JsError> {
 
 /// stellar-rpc never returns the raw recorded instruction count: recording mode
 /// measures slightly less work than the enforcing pass actually does, so it
-/// pads with `max(raw + 50_000, raw * 1.04)` before handing resources back.
-/// Submitting the raw number produces `Error(Budget, ExceededLimit)` on apply.
-fn adjust_instructions(raw: u32) -> u32 {
-    let raw64 = raw as u64;
-    let padded = std::cmp::max(raw64.saturating_add(50_000), (raw64 * 104) / 100);
-    padded.min(u32::MAX as u64) as u32
+/// pads it before handing resources back. Submitting the raw number produces
+/// `Error(Budget, ExceededLimit)` on apply.
+///
+/// This is soroban-simulation's `SimulationAdjustmentFactor::adjust_u32` with
+/// `default_adjustment()`'s instruction factor (x1.04, +50_000), where
+/// stellar-rpc first raises the additive part to the caller's
+/// `resourceConfig.instructionLeeway` (stellar-rpc v29.0.1,
+/// lib/preflight/src/shared.rs). Same f64 floor, and 0 stays 0.
+fn adjust_instructions(raw: u32, instruction_leeway: u32) -> u32 {
+    if raw == 0 {
+        return 0;
+    }
+    let additive = DEFAULT_INSTRUCTION_ADDITIVE.max(instruction_leeway);
+    raw.saturating_add(additive)
+        .max(((raw as f64) * 1.04).clamp(0.0, u32::MAX as f64).floor() as u32)
 }
+
+/// soroban-simulation `default_adjustment()`: instructions additive factor.
+const DEFAULT_INSTRUCTION_ADDITIVE: u32 = 50_000;
 
 /// Matches the `min_persistent_entry_ttl` in `ledger_info()`.
 const MIN_PERSISTENT_ENTRY_TTL: u32 = 100_000;
@@ -228,12 +240,14 @@ pub struct SorobanEnv {
     /// stellar-rpc feeds each preflight fresh entropy; we count instead, which
     /// keeps a fresh ledger fully reproducible while still varying per call.
     prng_counter: std::cell::Cell<u64>,
-    /// Cost calibration. `Budget::default()` is stellar-core's
-    /// `initialCpuCostParamsEntryForV20` — the table a network has BEFORE its
-    /// first settings upgrade. Every live network meters with the upgraded
-    /// table in `ConfigSettingContractCostParamsCpuInstructions`, so leaving
-    /// this unset over-meters by 15-250% versus any real node. Load the real
-    /// params with `setCostParams` to get numbers that transfer.
+    /// Cost calibration. Unset, `Budget::default()` applies. Up to 27.0.1 that
+    /// was stellar-core's `initialCpuCostParamsEntryForV20` — the table a
+    /// network has BEFORE its first settings upgrade — which over-metered
+    /// against any live node. From 28.0.0 the defaults are the live
+    /// calibration: on the pinned 29.0.2 they equal the protocol-27 table this
+    /// repo ships, so installing it with `setCostParams` changes no count. Load
+    /// a network's own table to match that network once it moves away from the
+    /// host's defaults.
     cpu_cost_params: Option<ContractCostParams>,
     mem_cost_params: Option<ContractCostParams>,
     cpu_limit: u64,
@@ -282,7 +296,8 @@ impl SorobanEnv {
 
     /// Install the network's real cost calibration, as base64
     /// `ContractCostParams` XDR (from the `ConfigSetting` ledger entries).
-    /// Without this the harness meters with the protocol-20 defaults.
+    /// Without this the harness meters with the host's defaults, which on the
+    /// pinned host equal the shipped protocol-27 table.
     #[wasm_bindgen(js_name = setCostParams)]
     pub fn set_cost_params(
         &mut self,
@@ -490,8 +505,15 @@ impl SorobanEnv {
 
     /// Recording mode. Discovers the footprint by reading through the snapshot
     /// source, records auth, and measures resources. Does NOT mutate the ledger.
-    pub fn simulate(&self, host_fn_b64: &str, source_b64: &str) -> Result<JsValue, JsError> {
-        self.simulate_inner(host_fn_b64, source_b64, None)
+    /// `instruction_leeway` is stellar-rpc's `resourceConfig.instructionLeeway`;
+    /// see `adjust_instructions`.
+    pub fn simulate(
+        &self,
+        host_fn_b64: &str,
+        source_b64: &str,
+        instruction_leeway: Option<u32>,
+    ) -> Result<JsValue, JsError> {
+        self.simulate_inner(host_fn_b64, source_b64, None, instruction_leeway.unwrap_or(0))
     }
 
     /// Re-simulate with already-signed authorization entries, in ENFORCING auth
@@ -506,8 +528,14 @@ impl SorobanEnv {
         host_fn_b64: &str,
         source_b64: &str,
         auth_b64: Vec<String>,
+        instruction_leeway: Option<u32>,
     ) -> Result<JsValue, JsError> {
-        self.simulate_inner(host_fn_b64, source_b64, Some(auth_b64))
+        self.simulate_inner(
+            host_fn_b64,
+            source_b64,
+            Some(auth_b64),
+            instruction_leeway.unwrap_or(0),
+        )
     }
 }
 
@@ -518,6 +546,7 @@ impl SorobanEnv {
         host_fn_b64: &str,
         source_b64: &str,
         auth_b64: Option<Vec<String>>,
+        instruction_leeway: u32,
     ) -> Result<JsValue, JsError> {
         let host_fn: HostFunction = from_xdr_b64(host_fn_b64)?;
         let source: AccountId = from_xdr_b64(source_b64)?;
@@ -586,7 +615,7 @@ impl SorobanEnv {
 
         let raw_instructions = res.resources.instructions;
         let mut submitted_resources = res.resources.clone();
-        submitted_resources.instructions = adjust_instructions(raw_instructions);
+        submitted_resources.instructions = adjust_instructions(raw_instructions, instruction_leeway);
 
         let out = SimulateResult {
             ok,
@@ -827,7 +856,7 @@ impl SorobanEnv {
 
 impl SorobanEnv {
     /// Build a budget from the installed network cost parameters when we have
-    /// them, falling back to the host's protocol-20 defaults when we do not.
+    /// them, falling back to the host's default table when we do not.
     fn make_budget(&self, cpu_limit: Option<u64>) -> Result<Budget, JsError> {
         let cpu = cpu_limit.unwrap_or(self.cpu_limit);
         match (&self.cpu_cost_params, &self.mem_cost_params) {

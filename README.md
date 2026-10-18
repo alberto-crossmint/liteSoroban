@@ -11,7 +11,7 @@ citizen, and a synchronous API.
 ```bash
 npm install
 npm run build:wasm     # needs: rustup target add wasm32-unknown-unknown; cargo install wasm-pack
-npm test               # 143 tests, ~800 ms
+npm test               # 153 tests, ~800 ms
 npm run test:validation # adversarial batteries — partly RED on purpose, see "Known gaps"
 ```
 
@@ -152,7 +152,6 @@ Found by nine adversarial test batteries plus a differential run against a live
 node; the red tests in `test/validation/` pin them.
 
 **Blocking real-network fidelity**
-- Cost calibration defaults to protocol-20 (above). Fix: `setCostParams`.
 - `module_cache: None` in the enforcing path charges the full `VmInstantiation`
   Wasm parse (const_term 451,626) where recording mode charges
   `VmCachedInstantiation` (41,142) to the shadow budget. The two halves disagree
@@ -170,11 +169,6 @@ node; the red tests in `test/validation/` pin them.
 
 **RPC facade** — all 18 `rpc.Server` methods respond and `test/rpc-compat.test.ts`
 checks the SDK-parsed result of each. Still wrong, found by review round 2:
-- The four validation switches do not reach the RPC submit path, so the same
-  envelope can behave differently through `svm.sendTransaction` and `rpcServer()`.
-- `requestAirdrop` on an EXISTING account rebuilds its `AccountEntry`, rewinding
-  the sequence and dropping signers.
-- `instructionLeeway` in `resourceConfig` is ignored.
 - Diagnostics do not reach `getTransaction`; fee stats are synthetic.
 - `Client.deploy` reaches the network (an SDK leak at `client.js:36-38`, not ours).
 

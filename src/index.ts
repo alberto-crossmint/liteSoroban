@@ -90,8 +90,9 @@ export class Ledger {
   }
 
   /**
-   * Install the network's real cost calibration. Without it the harness meters
-   * with the protocol-20 defaults and over-reports by 15-249%.
+   * Install a network's cost calibration. The pinned host already meters with
+   * the protocol-27 table this repo ships, so this changes no count until a
+   * network's table moves away from it; use it to match a specific network.
    */
   setCostParams(cpuParamsB64: string, memParamsB64: string, cpuLimit: bigint, memLimit: bigint): void {
     this.env.setCostParams(cpuParamsB64, memParamsB64, cpuLimit, memLimit);
@@ -168,9 +169,13 @@ export class Ledger {
     this.env.restore(id);
   }
 
-  /** Requirement 2. Records auth; does NOT run a custom account's __check_auth. */
-  simulate(hostFn: xdr.HostFunction, sourceB64: string): SimulateResult {
-    return this.env.simulate(hostFn.toXDR('base64'), sourceB64);
+  /**
+   * Requirement 2. Records auth; does NOT run a custom account's __check_auth.
+   * `instructionLeeway` is stellar-rpc's `resourceConfig.instructionLeeway`: the
+   * returned instructions are padded by max(50_000, leeway), or x1.04 if larger.
+   */
+  simulate(hostFn: xdr.HostFunction, sourceB64: string, instructionLeeway?: number): SimulateResult {
+    return this.env.simulate(hostFn.toXDR('base64'), sourceB64, instructionLeeway);
   }
 
   /**
@@ -182,8 +187,9 @@ export class Ledger {
     hostFn: xdr.HostFunction,
     sourceB64: string,
     authB64: string[],
+    instructionLeeway?: number,
   ): SimulateResult {
-    return this.env.simulateWithAuth(hostFn.toXDR('base64'), sourceB64, authB64);
+    return this.env.simulateWithAuth(hostFn.toXDR('base64'), sourceB64, authB64, instructionLeeway);
   }
 
   /** Requirement 1. */
