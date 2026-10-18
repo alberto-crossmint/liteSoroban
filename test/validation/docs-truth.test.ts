@@ -5,9 +5,11 @@
  * against running code. A red test is a false or unverifiable sentence in a
  * shipped document, not a bug in src/.
  *
- * GROUND TRUTH USED
- *   <scratch>/v27/soroban-env-host-27.0.1/src/budget.rs
- *   <scratch>/core-src/src/ledger/NetworkConfig.cpp
+ * GROUND TRUTH USED (outside this repo; the tests that need it skip when unset)
+ *   $SOROBAN_ENV_HOST_SRC/src/budget.rs
+ *       a soroban-env-host 27.0.1 checkout
+ *   $STELLAR_CORE_SRC/src/ledger/NetworkConfig.cpp
+ *       a stellar-core checkout
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -20,10 +22,11 @@ const README = readFileSync('README.md', 'utf8');
 const GUIDE = readFileSync('GUIDE.md', 'utf8');
 const GUIDE_TEST = readFileSync('test/guide.test.ts', 'utf8');
 
-const SCRATCH =
-  '/private/tmp/claude-501/-Users-alberto/8536199a-7797-4de6-9c1f-72ab2e240bed/scratchpad';
-const HOST_BUDGET_RS = `${SCRATCH}/v27/soroban-env-host-27.0.1/src/budget.rs`;
-const CORE_NETWORK_CONFIG = `${SCRATCH}/core-src/src/ledger/NetworkConfig.cpp`;
+// '' when unset: existsSync('') is false, so the skipIf guards below hold.
+const HOST_SRC = process.env.SOROBAN_ENV_HOST_SRC;
+const CORE_SRC = process.env.STELLAR_CORE_SRC;
+const HOST_BUDGET_RS = HOST_SRC ? `${HOST_SRC}/src/budget.rs` : '';
+const CORE_NETWORK_CONFIG = CORE_SRC ? `${CORE_SRC}/src/ledger/NetworkConfig.cpp` : '';
 
 const wasm = (n: string) => new Uint8Array(readFileSync(`test/fixtures/${n}`));
 
