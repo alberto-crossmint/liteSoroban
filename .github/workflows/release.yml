@@ -3,11 +3,17 @@ name: release
 # Publish: git tag v0.1.0 && git push origin v0.1.0
 #
 # Run it by hand from the Actions tab (workflow_dispatch) to do everything
-# except create the release; the assets come out as a build artifact. Use that
-# to check a change to this file or to the host build.
+# except create the release; the assets come out as a build artifact. A pull
+# request that touches this file or the packaging script does the same, so a
+# change to the release path is exercised before it can break a tag. Only a
+# v* tag reaches the release job.
 on:
   push:
     tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/package-release.sh
   workflow_dispatch:
 
 permissions:
