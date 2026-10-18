@@ -11,7 +11,7 @@ citizen, and a synchronous API.
 ```bash
 npm install
 npm run build:wasm     # needs: rustup target add wasm32-unknown-unknown; cargo install wasm-pack
-npm test               # 182 tests, ~800 ms
+npm test               # 194 tests, ~800 ms
 npm run test:validation # adversarial batteries — partly RED on purpose, see "Known gaps"
 ```
 
@@ -28,7 +28,7 @@ const c = svm.deployContract(wasm, { as: alice });
 expect(c.invoke('add', [sc.i32(2), sc.i32(3)])).toBe(5);
 ```
 
-Setting up a funded wallet, a deployed token and a minted balance costs **0.8 ms**,
+Setting up a funded wallet, a deployed token and a minted balance costs **~1 ms**,
 so `beforeEach` can build a whole world per test. A `stellar/quickstart` container
 needs ~14 s to boot and ~1 s per state-changing transaction, with no per-test
 rollback at any price.
@@ -62,10 +62,12 @@ table moves away from the host's defaults; to match a specific network exactly
 svm.withNetworkCostParams(await loadCostParamsFromRpc(mainnetServer));
 ```
 
-**Not yet re-measured against a protocol-29 node.** The differential numbers
-below were measured with host 27.0.1 against a live protocol-27 node
+The differential numbers in this table were measured with host 27.0.1 against a
+live protocol-27 node
 (stellar-rpc 27.1.1, captive-core 27.1.0), in-process raw vs the node's implied
-raw, with the protocol-27 table installed:
+raw, with the protocol-27 table installed. They are kept as the record of the
+27 to 29 drift; the node numbers pinned in `test/validation/` have since been
+re-captured against a protocol-29 node (below):
 
 | scenario | protocol-27 node | host 27.0.1 | host 29.0.2 |
 |---|---:|---:|---:|
@@ -76,7 +78,19 @@ raw, with the protocol-27 table installed:
 
 The host 29.0.2 column is the same table against the same protocol-27 node, so
 the drift is the host's own metering moving between versions, not calibration.
-Re-capture against a protocol-29 node before trusting absolute counts.
+Against a protocol-29 node (stellar-rpc 29.0.1, stellar-core v29.0.0,
+re-captured 2026-10-18) the recorded counts are exact, to the instruction, on
+every scenario whose footprint is pure Soroban: an upload, a deploy, `add`,
+`put_persistent`, `get_persistent`, a 10 KB write, a cross-contract call and a
+custom account's `__check_auth` round trip. The `test/validation/` calibration
+constants are pinned to that node. Footprints holding a classic `AccountEntry`
+now simulate within 0.5% too (a native SAC transfer between two G-accounts:
+159,818 against the node's 159,028, with disk and write bytes exact), since
+simulation reads accounts promoted to ext v3 the way stellar-rpc's preflight
+does, and `instructionLeeway` is exact. One residue: that transfer's APPLIED
+memory through the low-level `Ledger.send` is ~7% under the node, because that
+path never bumps the payer's sequence, which on a network promotes it to ext v3;
+an envelope through `sendTransaction` does get the promotion.
 
 What *was* byte-identical to the protocol-27 node on all six scenarios: footprints
 (read-only and read-write key sets), return `ScVal`s, contract events, and
@@ -94,8 +108,11 @@ recorded auth entries. Disk/write bytes match on five of six.
 
 ## What it is not good for
 
-- Resource, fee or budget assertions (see above).
-- State archival on the apply path, until the module cache lands.
+- Fee and rent assertions (`minResourceFee` is synthetic), and instruction or memory
+  counts for anything beyond the scenarios measured above.
+- Explicit `RestoreFootprint` / `ExtendFootprintTTL` operations, which are validated
+  but not dispatched (see "Known gaps"). Auto-restore *inside* an invocation works,
+  and the applied count matches the recorded one to within 1%.
 - Anything needing classic operations (Payment, CreateAccount, ChangeTrust).
 
 ## Architecture
@@ -134,10 +151,13 @@ Authorizing through a contract account is not simulate-then-send:
 4. send
 ```
 
-Skip 2 → `Error(Auth, InvalidAction)`. Skip 3 → `Error(Storage, ExceededLimit)`
-and *"trying to access contract data key outside of the footprint"*, because the
-first simulation never entered `__check_auth`. `contract.invoke(fn, args,
-{ signAuth })` does all four.
+Skip 2 or 3 and the call runs out of the instructions the first simulation
+declared, because that simulation never entered `__check_auth`. The declared count
+is enforced by default, as on a network, so both mistakes surface as
+`Error(Budget, ExceededLimit)`. With `ledger.enforceDeclaredResources(false)` you
+get the host's own errors instead: skip 2 → `Error(Auth, InvalidAction)`, skip 3 →
+`Error(Storage, ExceededLimit)` and *"trying to access contract data key outside
+of the footprint"*. `contract.invoke(fn, args, { signAuth })` does all four.
 
 Two host settings must be right or every custom-account authorization fails for
 reasons that look nothing like the cause: `network_id` must equal
@@ -151,12 +171,10 @@ simulations or the second one reuses the first's nonce and dies with
 Found by nine adversarial test batteries plus a differential run against a live
 node; the red tests in `test/validation/` pin them.
 
-**Blocking real-network fidelity**
-- `module_cache: None` in the enforcing path charges the full `VmInstantiation`
-  Wasm parse (const_term 451,626) where recording mode charges
-  `VmCachedInstantiation` (41,142) to the shadow budget. The two halves disagree
-  by 25-59%, which is why `enforceDeclaredResources` is **off by default** —
-  enforcing the declared limit makes every deploy fail.
+**Blocking real-network fidelity** — nothing open. Two items used to be here and are
+closed: cost calibration defaulting to protocol-20 (the host has shipped the live
+table since 28.0.0, see above) and the enforcing path's missing module cache (see
+"Apply-path metering").
 
 **Classic layer** — signatures (every signer type, consumption, `txBAD_AUTH_EXTRA`,
 operation thresholds, `extraSigners`), fee-bump fee rules, and the `AccountEntry`
@@ -181,9 +199,45 @@ checks the SDK-parsed result of each. Still wrong, found by review round 2:
 - Diagnostics do not reach `getTransaction`; fee stats are synthetic.
 - `Client.deploy` reaches the network (an SDK leak at `client.js:36-38`, not ours).
 
-**Apply-path metering** is 58-121% high on ordinary invocations and +220% CPU on a
-custom-account authorization, because the enforcing path has no module cache.
-Only the PREFLIGHT numbers are calibrated. Do not assert on applied resources.
+**Apply-path metering** matches the node. The enforcing path used to pass
+`module_cache: None`, so every applied invocation re-parsed its Wasm at the full
+`VmInstantiation` price (const_term 451,626) where recording mode charges the
+cached price (`VmCachedInstantiation`, 41,142 plus a per-byte term) to its shadow
+budget. `send` now hands the host a module cache built from the ContractCode in
+the transaction's footprint, the way stellar-core does, and drops from it any
+code the transaction restores (a node cannot have cached an archived entry, so
+that parse is billed in full). Applied CPU against the `core_metrics` events of a
+live protocol-29 node (stellar-core 29.0.0, stellar-rpc 29.0.1, measured
+2026-10-18 with that node's own cost table installed):
+
+| scenario | node | before | now |
+|---|---:|---:|---:|
+| deploy add_i32 | 493,979 | 862,811 (+74.7%) | 494,190 (+0.04%) |
+| deploy contract_data | 737,801 | 2,126,648 (+188.2%) | 738,012 (+0.03%) |
+| deploy invoke_contract | 330,409 | 847,553 (+156.5%) | 330,620 (+0.06%) |
+| `add(2,3)` | 276,240 | 472,671 (+71.1%) | 276,240 (0.0%) |
+| `put_persistent` | 411,280 | 1,172,909 (+185.2%) | 411,585 (+0.07%) |
+| `get_persistent` | 412,868 | 1,174,192 (+184.4%) | 412,868 (0.0%) |
+| cross-contract call | 619,017 | 1,562,424 (+152.4%) | 619,017 (0.0%) |
+
+Applied memory (`mem_byte`) is now exact on all seven (it was 2.9-9.9% high), and
+the recorded counts equal the node's implied raw counts exactly. A custom
+account's `__check_auth` was +219.6% CPU and +53.1% memory; against the
+protocol-29 node the same change brings it to +0.06-0.08% and +0.0%. Uploads of
+bytes the node had already stored differ by 1-3% in both directions; that is the
+existing-code artifact described in `test/validation/differential.test.ts`, not
+the cache.
+
+That also made it safe to enforce the instruction count a transaction declares,
+which is now **on by default** (`ledger.enforceDeclaredResources(false)` turns it
+off): every deploy and invocation above fits its declared count with 3.8-27% to
+spare, and the floor of that margin is stellar-rpc's own 4% padding. It used to be
+off because enforcing it failed every deploy with `Error(Budget, ExceededLimit)`.
+
+What is still not modelled: a node builds its cache at ledger close, so a contract
+uploaded and invoked within the SAME ledger pays the full parse there (the host's
+own comments say so; not measured here), while this harness, which has no ledger
+close, always finds the code cached.
 
 ## Findings worth keeping
 
