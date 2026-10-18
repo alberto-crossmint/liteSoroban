@@ -1,14 +1,16 @@
 /**
  * Network cost calibration.
  *
- * `soroban-env-host`'s `Budget::default()` is byte-for-byte stellar-core's
- * `initialCpuCostParamsEntryForV20` — the table a network carries only until its
- * first settings upgrade. Every live network meters with the upgraded table in
- * `ConfigSettingContractCostParamsCpuInstructions`. 18 of 86 CPU entries differ,
- * dominated by `ValDeser` const_term 59,052 (host default) vs 331 (network), and
- * the harness over-meters by 15-249% until the real table is installed.
+ * Up to 27.0.1, `soroban-env-host`'s `Budget::default()` was byte-for-byte
+ * stellar-core's `initialCpuCostParamsEntryForV20` — the table a network carries
+ * only until its first settings upgrade — and the harness over-metered by
+ * 15-249% until a real table was installed. 28.0.0 replaced those defaults with
+ * the live network's calibration (`ValDeser` const_term 331, not 59,052), and
+ * on the pinned 29.0.2 every CPU and memory entry equals the protocol-27 table
+ * shipped here, so installing it changes no count.
  *
- * Install one and instruction counts become comparable with a real node.
+ * Install a table when a network's calibration moves away from the host's
+ * defaults: `loadCostParamsFromRpc` reads the live one.
  */
 import { xdr, rpc } from '@stellar/stellar-sdk';
 import protocol27 from './costparams/protocol27.json' with { type: 'json' };

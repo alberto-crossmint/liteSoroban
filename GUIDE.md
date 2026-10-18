@@ -300,14 +300,16 @@ r.events;         // xdr.ContractEvent[]
 
 ## Asserting on resources
 
-**Opt in first**, or the numbers do not transfer to any real network:
+The pinned host (`soroban-env-host` 29.0.2) meters with the network's cost
+table out of the box. `withNetworkCostParams()` installs it explicitly and sets
+`metersLikeNetwork`:
 
 ```ts
 const svm = new LiteStellar().withNetworkCostParams();
 svm.metersLikeNetwork;     // true
 
 const r = c.tryInvoke('put_persistent', [sc.sym('k'), sc.u64(1n)]);
-r.instructions;            // within ~1% of a real node
+r.instructions;            // metered with the protocol-27 network table
 r.readBytes;
 r.writeBytes;
 r.footprint.readOnly;      // base64 LedgerKey[]
@@ -396,11 +398,11 @@ reasons this harness exists — use `signAuth`.
 the same account with the same explicit salt collides. The default salt
 increments; pass `salt` only if you want a specific address.
 
-**Resource numbers are uncalibrated by default.** See
-[Asserting on resources](#asserting-on-resources).
+**Resource numbers use the host's built-in cost table**, which on the pinned
+host is the network's. See [Asserting on resources](#asserting-on-resources).
 
 **The protocol pin is loud on purpose.** `new LiteStellar({ protocolVersion: 28 })`
-throws while the host is pinned to 27, rather than silently simulating the wrong
+throws while the host is pinned to 29, rather than silently simulating the wrong
 protocol.
 
 ## What this does not do

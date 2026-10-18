@@ -125,8 +125,13 @@ describe('enable_diagnostics is hardcoded true — does that cost budget?', () =
    *       recording FAILING get_persistent  off/on  cpu  921565  mem 1153908  Δ0  (2 events on)
    *       upstream e2e_tests.rs:855 upload  off/on  cpu 1767593  mem 1442169  Δ0
    *
-   * (c) The number below. Upstream's `expect!["1767593"]` at
-   *     e2e_tests.rs:894 was produced by calling
+   *     Re-run on 29.0.2, the host now pinned, for the row the test below
+   *     asserts:
+   *
+   *       upstream e2e_tests.rs:844 upload  off/on  cpu 1528075  mem 1437522  Δ0
+   *
+   * (c) The number below. Upstream's `expect!["1528075"]` at
+   *     29.0.2's e2e_tests.rs:883 was produced by calling
    *     `invoke_host_function_recording_helper` with its first argument —
    *     `enable_diagnostics` — set to `false`. The harness passes `true` and
    *     lands on the same integer.
@@ -143,11 +148,11 @@ describe('enable_diagnostics is hardcoded true — does that cost budget?', () =
 
     const sim = L.simulate(uploadWasmHostFn(E2E_ADD_I32), source);
 
-    expect(sim.instructions).toBe(1767593); // expect!["1767593"], diagnostics OFF upstream
+    expect(sim.instructions).toBe(1528075); // expect!["1528075"], diagnostics OFF upstream
     expect(sim.writeBytes).toBe(684); //      expect!["684"]
     // The native diagnostics-OFF run of the same scenario, to the byte.
-    expect(Number(sim.cpuInsns)).toBe(1767593);
-    expect(Number(sim.memBytes)).toBe(1442169);
+    expect(Number(sim.cpuInsns)).toBe(1528075);
+    expect(Number(sim.memBytes)).toBe(1437522);
   });
 
   it('no: mem_bytes is the non-shadow dimension, so diagnostics cannot show up in it', () => {

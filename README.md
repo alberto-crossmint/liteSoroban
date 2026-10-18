@@ -11,7 +11,7 @@ citizen, and a synchronous API.
 ```bash
 npm install
 npm run build:wasm     # needs: rustup target add wasm32-unknown-unknown; cargo install wasm-pack
-npm test               # 144 tests, ~800 ms
+npm test               # 143 tests, ~800 ms
 npm run test:validation # adversarial batteries — partly RED on purpose, see "Known gaps"
 ```
 
@@ -39,47 +39,46 @@ This harness is a **faithful emulator of the host it pins**, and **not** a
 faithful emulator of a Stellar network. Those are different claims, and an
 earlier version of this file conflated them.
 
-- Its metering is byte-identical to `soroban-env-host` 27.0.1's own e2e
-  expectations (nine exact `expect![]` values reproduced, including the
-  1,767,593-instruction ADD_I32 upload preflight at `e2e_tests.rs:894`).
+- Its metering is byte-identical to `soroban-env-host` 29.0.2's own e2e
+  expectations (ten exact `expect![]` values reproduced, including the
+  1,528,075-instruction ADD_I32 upload preflight at `e2e_tests.rs:883`).
   **True.** (Beware when cross-checking against another host version: the same
-  test asserts 1,528,075 at `:883` in 28.0.1 — the calibration moved.)
-- Its instruction counts agree with mainnet **only if you ask for it**:
+  test asserts 1,767,593 at `:894` in 27.0.1 — the calibration moved in 28.0.0.)
+- Its instruction counts use the network's calibration **out of the box**.
+  Up to 27.0.1, `soroban-env-host`'s `Budget::default()` was byte-for-byte
+  stellar-core's `initialCpuCostParamsEntryForV20`, the calibration a network
+  carries only until its first settings upgrade (`ValDeser` `const_term`
+  **59,052** vs a live network's **331**). 28.0.0 replaced those defaults with
+  the live calibration: on the pinned 29.0.2, all 86 CPU and 86 memory entries
+  equal the protocol-27 table this repository captured from a real node's
+  `ConfigSetting` entries.
 
-```ts
-const svm = new LiteStellar().withNetworkCostParams();
-```
-
-`soroban-env-host`'s `Budget::default()` is byte-for-byte stellar-core's
-`initialCpuCostParamsEntryForV20` — the calibration a network carries only until
-its first settings upgrade. 18 of 86 CPU cost entries differ from a live
-network's, dominated by `ValDeser` `const_term` **59,052** vs **331**. Measured
-differentially against a live node (stellar-rpc 27.1.1, captive-core 27.1.0,
-protocol 27), in-process raw vs the node's implied raw:
-
-| scenario | real node | default | `withNetworkCostParams()` |
-|---|---:|---:|---:|
-| upload add_i32 | 1,547,805 | +14.1% | **+1.4%** |
-| `add(2,3)` | 304,084 | +134.1% | **+0.3%** |
-| `put_persistent` | 550,088 | +72.5% | **+0.1%** |
-| `get_persistent` | 550,166 | +93.8% | **+0.1%** |
-
-`withNetworkCostParams()` ships a protocol-27 table captured from a real node's
-`ConfigSetting` entries. To match a specific network exactly — mainnet at a
-specific moment, say — read its live table instead:
+`withNetworkCostParams()` installs that table explicitly, which on this host
+changes no count, and sets `metersLikeNetwork`. It matters once a network's
+table moves away from the host's defaults; to match a specific network exactly
+— mainnet at a specific moment, say — read its live table:
 
 ```ts
 svm.withNetworkCostParams(await loadCostParamsFromRpc(mainnetServer));
 ```
 
-**Left on by default? No.** The default stays uncalibrated so that a harness
-that has not opted in cannot quietly produce numbers someone trusts. `metersLikeNetwork`
-tells you which mode you are in.
+**Not yet re-measured against a protocol-29 node.** The differential numbers
+below were measured with host 27.0.1 against a live protocol-27 node
+(stellar-rpc 27.1.1, captive-core 27.1.0), in-process raw vs the node's implied
+raw, with the protocol-27 table installed:
 
-The residual ~1.4% on upload is not calibration: it is the `AccountEntry`
-extension chain and the missing module cache, both under "Known gaps".
+| scenario | protocol-27 node | host 27.0.1 | host 29.0.2 |
+|---|---:|---:|---:|
+| upload add_i32 | 1,547,805 | +1.4% | −1.4% |
+| `add(2,3)` | 304,084 | +0.3% | −9.4% |
+| `put_persistent` | 550,088 | +0.1% | −24.8% |
+| `get_persistent` | 550,166 | +0.1% | −24.6% |
 
-What *is* byte-identical to the real node on all six scenarios: footprints
+The host 29.0.2 column is the same table against the same protocol-27 node, so
+the drift is the host's own metering moving between versions, not calibration.
+Re-capture against a protocol-29 node before trusting absolute counts.
+
+What *was* byte-identical to the protocol-27 node on all six scenarios: footprints
 (read-only and read-write key sets), return `ScVal`s, contract events, and
 recorded auth entries. Disk/write bytes match on five of six.
 
@@ -214,7 +213,10 @@ source — `InvokeHostFunctionOpFrame.cpp` passes `mOpFrame.getSourceID()`.
 `soroban-env-host` 27.0.1 (`encoded_ledger_entries` and `encoded_ttl_entries` as
 two parallel equal-length iterators) and **13** in 28.0.1 (TTL folded in via
 `TtlLedgerEntryMeta`). Recording mode is identical in both. stellar-rpc vendors
-both and dispatches on `ledger_info.protocol_version`.
+both and dispatches on `ledger_info.protocol_version`. 29.0.2 keeps the 28.x
+signatures, and the harness targets that shape: one iterator item per footprint
+key, absent keys included as `(None, None)` — skip one and every later entry
+lands on the wrong key (`PROTOCOL PINNING` in `crates/host-wasm/src/lib.rs`).
 
 **`SorobanResources.read_bytes` is `disk_read_bytes` in P27.**
 

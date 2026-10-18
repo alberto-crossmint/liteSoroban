@@ -506,15 +506,15 @@ const HOST_DEFAULT_CPU_COST_PARAMS: ReadonlyArray<readonly [string, number, numb
 
 describe('metering anchor: the harness vs the host it pins', () => {
   it('reproduces upstream e2e_tests.rs `test_wasm_upload_success_in_recording_mode` exactly', () => {
-    // soroban-env-host-27.0.1/src/test/e2e_tests.rs:894
-    //   expect!["1767593"].assert_eq(&res.resources.instructions.to_string());
+    // soroban-env-host-29.0.2/src/test/e2e_tests.rs:883
+    //   expect!["1528075"].assert_eq(&res.resources.instructions.to_string());
     //   expect!["684"].assert_eq(&res.resources.write_bytes.to_string());
     const L = new Ledger({ networkPassphrase: PASSPHRASE });
     const source = L.fundAccount(1);
     const sim = L.simulate(uploadWasmHostFn(UPSTREAM_ADD_I32), source);
 
     expect(sim.ok, sim.error).toBe(true);
-    expect(sim.instructions).toBe(1767593);
+    expect(sim.instructions).toBe(1528075);
     expect(sim.writeBytes).toBe(684);
     expect(sim.readBytes).toBe(0);
   });
